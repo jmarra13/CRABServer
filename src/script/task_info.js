@@ -2,6 +2,8 @@ $(document).ready(function() {
     // Task name that was entered by the user, is set on form submission
     var inputTaskName = "";
 
+    var DB_VERSIONS = ["prod", "preprod", "dev"];   
+
     // Task info is stored upon displaying it. Required for the tm_user_webdir value, which is needed
     // for loading the config and pset files.
     var taskInfo = "",
@@ -16,7 +18,7 @@ $(document).ready(function() {
         inputDataset = "";
 
     // In most cases the user won't want to override the default database
-    setDefaultDbVersionSelector();
+    // setDefaultDbVersionSelector();
 
     // If a parameter "task" exists, tries to load task info the same way a form submit loads it.
     processPageUrl();
@@ -35,19 +37,18 @@ $(document).ready(function() {
         taskInfo = "";
 
         // Change the URL so that it can be copied/pasted more easily
-        var temp = window.location.href.split("/ui/")[0] + "/ui/task/" + inputTaskName;
-        //window.location.href = temp;
+        var temp = window.location.href.split("/ui")[0] + "/ui/task/" + inputTaskName;
 
-        // TODO - is this hack ok?
+        // If default db versin is overriden, add it to url parameters
+        if (getDbVersionSelector() !== getDefaultDbVersion()) {
+            temp += "/dbver/" + getDbVersionSelector();
+        }
+
         window.history.pushState("", "", temp);
         console.log("test");
 
         clearPreviousContent();
-        displayTaskInfo(handleTaskInfoErr);
-        // loadContent();
-
-        // displayUploadLog();
-        //document.location.hash = "/task/" + inputTaskName;
+        displayTaskInfo(handleTaskInfoErr);;
     });
 
     // Has to be run after displayTaskInfo
@@ -76,7 +77,6 @@ $(document).ready(function() {
                 }
             }
         }
-
     }
 
     /**
@@ -127,8 +127,16 @@ $(document).ready(function() {
      */
     function displayConfigAndPSet(errHandler) {
         // var userWebDir = "";
-        if (userWebDir === undefined || userWebDir === "") {
+        if (userWebDir === "") {
             errHandler(new TaskInfoUndefinedError());
+            return;
+        } else if (userWebDir === "None") {
+            // If user webdir wasn't created at all
+            errHandler(new UserWebDirUndefinedError());
+            return;
+        } else if (sandboxUrl === "") {
+            // In case proxy api returned empty or failed
+            errHandler(new SandboxNotLoadedError);
             return;
         }
 
@@ -144,6 +152,8 @@ $(document).ready(function() {
                 $("#task-pset-paragraph").text(f.data);
             }
         }, null, handleTarGZCallbackErr);
+        $("#task-config-link").attr("href", userWebDir + urlEnd);
+        $("#task-pset-link").attr("href", userWebDir + urlEnd);
     }
 
     function querySandboxApi() {
@@ -152,8 +162,8 @@ $(document).ready(function() {
             .done(function(data) {
                 sandboxUrl = data.result[0];
 
-                if (sandboxUrl === undefined || sandboxUrl === "" || sandboxUrl == "None") {
-                    sandboxUrl = userWebDir;
+                if (sandboxUrl === undefined || sandboxUrl == "None") {
+                    sandboxUrl = "";
                 }
 
                 displayConfigAndPSet(handleConfigPSetErr);
@@ -162,7 +172,7 @@ $(document).ready(function() {
             .fail(function(xhr) {
                 // TODO process error?
                 console.log("error querying sandbox api");
-                sandboxUrl = userWebDir;
+                sandboxUrl = "";
                 displayConfigAndPSet(handleConfigPSetErr);
                 displayScriptExe(handleScriptExeErr);
             });
@@ -237,9 +247,20 @@ $(document).ready(function() {
         } else if (scriptExe === "None") {
             errHandler(new ScriptExeNotUsedError);
             return;
+        } else if (userWebDir === "None") {
+            // If user webdir wasn't created at all
+            errHandler(new UserWebDirUndefinedError());
+            return;
+        } else if (sandboxUrl === "") {
+            // In case proxy api returned empty or failed
+            errHandler(new SandboxNotLoadedError);
+            return;
         }
 
+
         var urlEnd = "/sandbox.tar.gz";
+
+
 
         var tgz = TarGZ.stream(sandboxUrl + urlEnd, function(f, h) {
             if (f.filename == scriptExe) {
@@ -247,10 +268,12 @@ $(document).ready(function() {
                 console.log(f.data);
             }
         }, null, handleScriptExeCallbackErr);
+        $("#script-exe-link").attr("href", userWebDir + urlEnd);
+
     }
 
     function displayMainPage(errHandler) {
-        if (userWebDir !== "" && userWebDir !== undefined && inputTaskName !== "" && inputTaskName !== undefined) {
+        if (userWebDir !== "" && inputTaskName !== "" && inputTaskName !== undefined) {
 
             var dashboardUrl = "http://dashb-cms-job.cern.ch/dashboard/templates/" + "task-analysis/#user=default&refresh=0&table=Jobs&p=1&records=25" + "&activemenu=2&status=&site=&tid=" + inputTaskName;
 
@@ -324,7 +347,7 @@ $(document).ready(function() {
                     $("#upload-log-error-box").append("<span id=\"spaced-span\">" + headerArray[i].substr(0, colonIndex + 1) + "</span><span>" + headerArray[i].substr(colonIndex + 1) + "</span><br/>");
                 }
             } else {
-                $("#upload-log-error-box").css("display", "inherit").text("Network error");
+                $("#upload-log-error-box").css("display", "inherit").text("Couldn't load UploadLog, you can download it from the link below.");
             }
 
         }
@@ -362,7 +385,7 @@ $(document).ready(function() {
                     $("#taskworker-log-error-box").append("<span id=\"spaced-span\">" + headerArray[i].substr(0, colonIndex + 1) + "</span><span>" + headerArray[i].substr(colonIndex + 1) + "</span>\n");
                 }
             } else {
-                $("#taskworker-log-error-box").css("display", "inherit").text("Network error");
+                $("#taskworker-log-error-box").css("display", "inherit").text("Couldn't load TaskWorker log, you can download it from the link below.");
             }
         } else if (err instanceof TaskInfoUndefinedError) {
             $("#taskworker-log-error-box").empty().css("display", "inherit").text("Task info not loaded");
@@ -370,15 +393,30 @@ $(document).ready(function() {
     }
 
     function handleConfigPSetErr(err) {
-        $("#task-config-error-box").css("display", "inherit").text("Task Info not loaded, can't get config");
-        $("#task-pset-error-box").css("display", "inherit").text("Task Info not loaded, can't get PSet")
+        if (err instanceof SandboxNotLoadedError) {
+            $("#task-config-error-box").css("display", "inherit").text("Couldn't load config, please open sandbox.tar.gz " + 
+                "from the link below and look for it under debug/originalConfig.py");
+            $("#task-pset-error-box").css("display", "inherit").text("Couldn't load PSet, please open sandbox.tar.gz " + 
+                "from the link below and look for it under debug/originalPset.py");
+        } else if (err instanceof TaskInfoUndefinedError) {
+            $("#task-config-error-box").css("display", "inherit").text("Task Info not loaded, can't get config");
+            $("#task-pset-error-box").css("display", "inherit").text("Task Info not loaded, can't get PSet")
+        } else if (err instanceof UserWebDirUndefinedError) {
+            $("#task-config-error-box").css("display", "inherit").text("Task webdir is not available (maybe the task was not submitted to the schedd)");
+            $("#task-pset-error-box").css("display", "inherit").text("Task webdir is not available (maybe the task was not submitted to the schedd)")
+        }
     }
 
     function handleScriptExeErr(err) {
         if (err instanceof ScriptExeNotUsedError) {
             $("#script-exe-error-box").css("display", "inherit").text("ScriptExe was not used");
+        } else if (err instanceof SandboxNotLoadedError) {
+            $("#script-exe-error-box").css("display", "inherit").text("Couldn't load ScriptExe, please open sandbox.tar.gz " +
+                "from the link below and look for " + scriptExe);
         } else if (err instanceof TaskInfoUndefinedError) {
             $("#script-exe-error-box").css("display", "inherit").text("Task info not loaded");
+        } else if (err instanceof UserWebDirUndefinedError) {
+            $("#script-exe-error-box").css("display", "inherit").text("Task webdir is not available (maybe the task was not submitted to the schedd)");
         }
     }
 
@@ -421,6 +459,14 @@ $(document).ready(function() {
         this.name = "ScriptExeNotUsedError";
     }
 
+    function SandboxNotLoadedError() {
+        this.name = "SandboxNotLoadedError";
+    }
+
+    function UserWebDirUndefinedError() {
+        this.name = "UserWebDirUndefinedError";
+    }
+
     function setUrls(dbVersion) {
         switch (dbVersion) {
             case "prod":
@@ -458,23 +504,55 @@ $(document).ready(function() {
         }
     }
 
-    // Loads a task based on the name parameter the url contains.
-    function processPageUrl() {
-        var re = /\/task\/(.+)/;
+    function getDbVersionSelector() {
+        return $("#db-selector-box").val();
+    }
 
-        var result = re.exec(window.location.href);
-        if (result !== undefined && result !== null) {
-            inputTaskName = result[1];
-            console.log(inputTaskName);
-
-            // Set on pageload by setDefaultDnVersionSelector()
-            dbVersion = $("#db-selector-box").val();
-            setUrls(dbVersion);
-
-            $("#task-search-form-input").val(inputTaskName);
-            displayTaskInfo(handleTaskInfoErr);
-            clearPreviousContent();
+    function getDefaultDbVersion() {
+        switch (document.domain) {
+            case "cmsweb.cern.ch":
+                return "prod";
+            case "cmsweb-testbed.cern.ch":
+                return "preprod";
+            default:
+                return "dev";
         }
+    }
+
+    /**
+     * Processes a page url based on the parameters it contains.
+     * If a /task/<taskname> parameter is found, tries to load a task from the database
+     * If a /dbver/<dbversion> parameter is found, sets the specified db version to use in queries
+     */
+    function processPageUrl() {
+        var urlArray = window.location.href.split("\/");
+        console.log(urlArray);
+        var taskIndex = $.inArray("task", urlArray);
+
+        var dbVersionIndex = $.inArray("dbver", urlArray);
+
+        if (dbVersionIndex != -1 && urlArray.length > dbVersionIndex && urlArray[dbVersionIndex + 1] !== ""
+                && $.inArray(urlArray[dbVersionIndex + 1], DB_VERSIONS) !== -1) {
+            dbVersion = urlArray[dbVersionIndex + 1];
+            $("#db-selector-box").val(dbVersion);
+        } else {
+            setDefaultDbVersionSelector();
+            dbVersion = getDbVersionSelector();            
+        }
+
+        if (taskIndex != -1 && urlArray.length > taskIndex && urlArray[taskIndex + 1] !== "") {
+            inputTaskName = urlArray[taskIndex + 1];
+            $("#task-search-form-input").val(inputTaskName);
+
+            setUrls(dbVersion);
+            clearPreviousContent();
+            displayTaskInfo(handleTaskInfoErr);
+        } else {
+            dbVersion = getDbVersionSelector();
+            setUrls(dbVersion);
+        }   
+
+        
     }
 
     function loadOtherData() {

@@ -113,8 +113,8 @@ class DataWorkflow(object):
         raise NotImplementedError
 
     @conn_handler(services=['centralconfig'])
-    def submit(self, workflow, activity, jobtype, jobsw, jobarch, inputdata, use_parent, generator, events_per_lumi, siteblacklist, sitewhitelist, splitalgo, algoargs, cachefilename, cacheurl, addoutputfiles,
-               userhn, userdn, savelogsflag, publication, publishname, asyncdest, dbsurl, publishdbsurl, vorole, vogroup, tfileoutfiles, edmoutfiles,
+    def submit(self, workflow, activity, jobtype, jobsw, jobarch, inputdata, use_parent, secondarydata, generator, events_per_lumi, siteblacklist, sitewhitelist, splitalgo, algoargs, cachefilename, cacheurl, addoutputfiles,
+               userhn, userdn, savelogsflag, publication, publishname, publishname2, asyncdest, dbsurl, publishdbsurl, vorole, vogroup, tfileoutfiles, edmoutfiles,
                runs, lumis, totalunits, adduserfiles, oneEventMode=False, maxjobruntime=None, numcores=None, maxmemory=None, priority=None, lfn=None,
                ignorelocality=None, saveoutput=None, faillimit=10, userfiles=None, userproxy=None, asourl=None, scriptexe=None, scriptargs=None, scheddname=None,
                extrajdl=None, collector=None, dryrun=False, publishgroupname=False, nonvaliddata=False):
@@ -128,6 +128,7 @@ class DataWorkflow(object):
            :arg str inputdata: input dataset;
            :arg str nonvaliddata: allow invalid input dataset;
            :arg int use_parent: add the parent dataset as secondary input;
+           :arg str secondarydata: optional secondary dataset;
            :arg str generator: event generator for MC production;
            :arg int events_per_lumi: number of events per lumi to generate
            :arg str list siteblacklist: black list of sites, with CMS name;
@@ -141,6 +142,7 @@ class DataWorkflow(object):
            :arg str userdn: DN of user doing the request;
            :arg str userhn: hyper new name of the user doing the request;
            :arg int publication: flag enabling or disabling data publication;
+           :arg str publishname: name to use for data publication; deprecated
            :arg str publishname: name to use for data publication;
            :arg str publishgroupname: add groupname or username to publishname;
            :arg str asyncdest: CMS site name for storage destination of the output files;
@@ -216,6 +218,7 @@ class DataWorkflow(object):
                             input_dataset   = [inputdata],
                             nonvalid_data   = ['T' if nonvaliddata else 'F'],
                             use_parent      = [use_parent],
+                            secondary_dataset = [secondarydata],
                             generator       = [generator],
                             events_per_lumi = [events_per_lumi],
                             site_whitelist  = [dbSerializer(sitewhitelist)],
@@ -231,10 +234,7 @@ class DataWorkflow(object):
                             user_vo         = ['cms'],
                             user_role       = [vorole],
                             user_group      = [vogroup],
-                            ## The client defines publishname = <Data.publishDataName>-<isbchecksum>
-                            ## if the user defines Data.publishDataName, and publishname = <isbchecksum> otherwise.
-                            ## (The PostJob replaces then the isbchecksum by the psethash.)
-                            publish_name    = [(workflow.replace(":", "_") + '-' + publishname) if publishname.find('-')==-1 else publishname],
+                            publish_name    = [publishname2],
                             publish_groupname = ['T' if publishgroupname else 'F'],
                             asyncdest       = [asyncdest],
                             dbs_url         = [dbsurl],
